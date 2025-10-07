@@ -7,9 +7,6 @@ on:
         description: "version"
         required: true
         type: string
-  release:
-    types:
-      - published
 
 jobs:
   build:
@@ -62,13 +59,14 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           GOARM: ${{ matrix.goarm }}
-      - name: Package
+      - name: Compress
         run: |
           mkdir -p output/sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
           mv dist/sing-box output/sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
           cp LICENSE output/sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
           cd output
-          tar -czf sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}.tar.gz sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
+          tar -czf sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}.tar.gz \
+          sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
           rm -rf sing-box-${{ github.event.inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
