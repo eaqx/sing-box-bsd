@@ -81,6 +81,6 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           artifacts: "artifacts/*.tar.gz"
-          name: ${{ github.event.inputs.version }}
-          tag: v${{ github.event.inputs.version }}
+          name: ${{ inputs.version }}
+          tag: v${{ inputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
