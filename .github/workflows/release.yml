@@ -1,10 +1,10 @@
-name: Build and Release
+name: Build
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "version"
+        description: "Version name"
         required: true
         type: string
 
@@ -28,16 +28,16 @@ jobs:
           ref: v${{ inputs.version }}
           fetch-depth: 0
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version: ^1.25.5
       - name: Set build tags
-        run: |
+        run: |-
           set -xeuo pipefail
           TAGS='with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale'
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Build
-        run: |
+        run: |-
           set -xeuo pipefail
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box -tags "${BUILD_TAGS}" \
@@ -48,39 +48,76 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           GOARM: ${{ matrix.goarm }}
-      - name: Prepare
-        run: |
+      - name: Set name
+        run: |-
+          DIR_NAME="sing-box-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"
+          if [[ -n "${{ matrix.goarm }}" ]]; then
+            DIR_NAME="${DIR_NAME}v${{ matrix.goarm }}"
+          fi
+          echo "DIR_NAME=${DIR_NAME}" >> "${GITHUB_ENV}"
+      - name: Archive
+        run: |-
           set -xeuo pipefail
-          mkdir -p dist/output
-          mv dist/sing-box dist/output
-          cp LICENSE dist/output
           cd dist
-          mv output sing-box-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
-          tar -czf sing-box-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}.tar.gz \
-          sing-box-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
-          rm -rf dist/sing-box-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
+          mkdir -p "${DIR_NAME}"
+          cp ../LICENSE "${DIR_NAME}"
+          cp sing-box "${DIR_NAME}"
+          tar -czvf "${DIR_NAME}.tar.gz" "${DIR_NAME}"
+          rm -r "${DIR_NAME}"
+      - name: Cleanup
+        run: rm dist/sing-box
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.os }}_${{ matrix.arch }}${{ matrix.goarm && format('v{0}', matrix.goarm) }}
           path: "dist"
-  release:
-    name: Release
+  upload:
+    name: Upload builds
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: 
+    needs:
       - build
     steps:
-      - name: Download artifacts
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Cache ghr
+        uses: actions/cache@v4
+        id: cache-ghr
+        with:
+          path: |
+            ~/go/bin/ghr
+          key: ghr
+      - name: Setup ghr
+        if: steps.cache-ghr.outputs.cache-hit != 'true'
+        run: |-
+          cd $HOME
+          git clone https://github.com/nekohasekai/ghr ghr
+          cd ghr
+          go install -v .
+      - name: Set tag
+        run: |-
+          git ls-remote --exit-code --tags origin v${{ inputs.version }} || echo "PUBLISHED=false" >> "$GITHUB_ENV"
+          git tag v${{ inputs.version }} -f
+          echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+      - name: Download builds
         uses: actions/download-artifact@v5
         with:
-          path: artifacts
+          path: dist
           merge-multiple: true
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          artifacts: "artifacts/*.tar.gz"
-          name: ${{ inputs.version }}
-          tag: v${{ inputs.version }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload builds
+        if: ${{ env.PUBLISHED == 'false' }}
+        run: |-
+          export PATH="$PATH:$HOME/go/bin"
+          ghr --replace --draft --prerelease -p 5 "v${VERSION}" dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Replace builds
+        if: ${{ env.PUBLISHED != 'false' }}
+        run: |-
+          export PATH="$PATH:$HOME/go/bin"
+          ghr --replace -p 5 "v${VERSION}" dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
